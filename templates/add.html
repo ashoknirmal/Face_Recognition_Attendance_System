@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Add New User - Face Recognition Attendance System{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: center; align-items: center; min-height: 60vh;">
+    <div class="card" style="width: 100%; max-width: 500px;">
+        <h2 style="text-align: center; margin-bottom: 30px; color: #4a5568;">
+            <i class="fas fa-user-plus"></i> Add New User
+        </h2>
+        
+        <div style="text-align: center; margin-bottom: 20px; color: #666;">
+            <p><i class="fas fa-info-circle"></i> The system will capture 10 face images for recognition training.</p>
+            <p><strong>Total Users in Database:</strong> {{ totalreg() }}</p>
+        </div>
+        
+        <form method="POST" action="{{ url_for('add') }}">
+            <div class="form-group">
+                <label for="newusername"><i class="fas fa-user"></i> Full Name *</label>
+                <input type="text" id="newusername" name="newusername" required 
+                       placeholder="Enter full name" value="{{ request.form.newusername if request.form else '' }}">
+            </div>
+            
+            <div class="form-group">
+                <label for="newuserid"><i class="fas fa-id-card"></i> User ID *</label>
+                <input type="text" id="newuserid" name="newuserid" required 
+                       placeholder="Enter unique ID number" value="{{ request.form.newuserid if request.form else '' }}">
+            </div>
+            
+            <div style="text-align: center;">
+                <button type="submit" class="btn btn-success" style="width: 100%;">
+                    <i class="fas fa-camera"></i> Start Face Capture
+                </button>
+            </div>
+        </form>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <a href="{{ url_for('home') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
