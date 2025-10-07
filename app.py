@@ -11,7 +11,6 @@ import mysql.connector
 from mysql.connector import Error
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
-import shutil
 from authlib.integrations.flask_client import OAuth
 import requests
 from sklearn.neighbors import KNeighborsClassifier
@@ -19,6 +18,8 @@ import joblib
 import base64
 import io
 from PIL import Image
+import boto3
+from botocore.exceptions import ClientError
 
 # Load environment variables
 load_dotenv()
@@ -26,6 +27,16 @@ load_dotenv()
 # Flask App
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'fallback_secret_key')
+
+# AWS S3 Configuration
+S3_BUCKET = os.getenv('S3_BUCKET', 'your-bucket-name')
+S3_REGION = os.getenv('S3_REGION', 'us-east-1')
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=S3_REGION
+)
 
 # Flask-WTF Form for Add User
 class AddUserForm(FlaskForm):
@@ -113,7 +124,8 @@ def init_directories():
         try:
             with open(csv_path, 'w') as f:
                 f.write('Name,Roll,Time\n')
-            print(f"✅ Created attendance CSV: {csv_path}")
+            s3_client.upload_file(csv_path, S3_BUCKET, f'Attendance/Attendance-{datetoday}.csv')
+            print(f"✅ Created and uploaded attendance CSV: {csv_path}")
         except Exception as e:
             print(f"❌ Error creating CSV: {e}")
             success = False
@@ -216,10 +228,14 @@ def extract_faces(img):
 
 def identify_face(facearray):
     try:
-        if not os.path.exists('/tmp/static/face_recognition_model.pkl'):
-            print("⚠️  No trained model found. Please add users first.")
-            return None
-        model = joblib.load('/tmp/static/face_recognition_model.pkl')
+        model_path = '/tmp/static/face_recognition_model.pkl'
+        if not os.path.exists(model_path):
+            try:
+                s3_client.download_file(S3_BUCKET, 'face_recognition_model.pkl', model_path)
+            except ClientError:
+                print("⚠️  No trained model found in S3. Please add users first.")
+                return None
+        model = joblib.load(model_path)
         prediction = model.predict(facearray)[0]
         return prediction
     except Exception as e:
@@ -247,12 +263,18 @@ def train_model():
                         faces.append(resized_face.ravel())
                         labels.append(user)
                         total_images += 1
+                    # Upload to S3
+                    s3_key = f'faces/{user}/{imgname}'
+                    s3_client.upload_file(img_path, S3_BUCKET, s3_key)
+                    print(f"✅ Uploaded {s3_key} to S3")
         if len(faces) > 0:
             faces = np.array(faces)
             knn = KNeighborsClassifier(n_neighbors=5)
             knn.fit(faces, labels)
-            joblib.dump(knn, '/tmp/static/face_recognition_model.pkl')
-            print(f"✅ Model trained with {total_images} face samples from {len(userlist)} users")
+            model_path = '/tmp/static/face_recognition_model.pkl'
+            joblib.dump(knn, model_path)
+            s3_client.upload_file(model_path, S3_BUCKET, 'face_recognition_model.pkl')
+            print(f"✅ Model trained with {total_images} face samples from {len(userlist)} users and uploaded to S3")
             return True
         else:
             print("⚠️  No face data available for training")
@@ -264,8 +286,13 @@ def train_model():
 def extract_attendance():
     try:
         csv_path = f'/tmp/Attendance/Attendance-{datetoday}.csv'
-        if not os.path.exists(csv_path):
-            return [], [], [], 0
+        s3_key = f'Attendance/Attendance-{datetoday}.csv'
+        try:
+            s3_client.download_file(S3_BUCKET, s3_key, csv_path)
+        except ClientError:
+            with open(csv_path, 'w') as f:
+                f.write('Name,Roll,Time\n')
+            s3_client.upload_file(csv_path, S3_BUCKET, s3_key)
         df = pd.read_csv(csv_path)
         names = df['Name'].tolist()
         rolls = df['Roll'].tolist()
@@ -284,6 +311,7 @@ def add_attendance(name):
         userid = name.split('_')[1]
         current_time = datetime.now().strftime("%H:%M:%S")
         csv_path = f'/tmp/Attendance/Attendance-{datetoday}.csv'
+        s3_key = f'Attendance/Attendance-{datetoday}.csv'
         df = pd.read_csv(csv_path) if os.path.exists(csv_path) else pd.DataFrame(columns=['Name', 'Roll', 'Time'])
         if int(userid) not in list(df['Roll']):
             new_record = pd.DataFrame({
@@ -293,6 +321,8 @@ def add_attendance(name):
             })
             df = pd.concat([df, new_record], ignore_index=True)
             df.to_csv(csv_path, index=False)
+            s3_client.upload_file(csv_path, S3_BUCKET, s3_key)
+            print(f"✅ Uploaded attendance CSV to S3: {s3_key}")
             connection = get_db_connection()
             if connection:
                 try:
@@ -413,9 +443,9 @@ def add():
                 os.makedirs(userimagefolder)
             images = request.files.getlist('images')
             if len(images) < nimgs:
-                flash(f'Please upload {nimgs} images.', 'error')
+                flash(f'Please upload exactly {nimgs} images.', 'error')
                 return render_template('add.html', form=form, totalreg=totalreg(), datetoday2=datetoday2)
-            for i, image_file in enumerate(images):
+            for i, image_file in enumerate(images[:nimgs]):
                 image_data = image_file.read()
                 image = Image.open(io.BytesIO(image_data))
                 image = np.array(image)
@@ -424,8 +454,11 @@ def add():
                 if len(faces) > 0:
                     (x, y, w, h) = faces[0]
                     name = f'{newusername}_{i}.jpg'
-                    cv2.imwrite(os.path.join(userimagefolder, name), image[y:y+h, x:x+w])
-                    print(f"📷 Saved image {i+1}/{nimgs}")
+                    img_path = os.path.join(userimagefolder, name)
+                    cv2.imwrite(img_path, image[y:y+h, x:x+w])
+                    s3_key = f'faces/{newusername}_{newuserid}/{name}'
+                    s3_client.upload_file(img_path, S3_BUCKET, s3_key)
+                    print(f"✅ Uploaded {s3_key} to S3")
                 else:
                     flash(f'No face detected in image {i+1}.', 'error')
                     return render_template('add.html', form=form, totalreg=totalreg(), datetoday2=datetoday2)
