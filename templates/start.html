@@ -1,0 +1,37 @@
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<video id="video" width="640" height="480" autoplay></video>
+<canvas id="canvas"></canvas>
+<button onclick="capture()">Mark Attendance</button>
+<script>
+    async function loadModels() {
+        await faceapi.nets.tinyFaceDetector.loadFromUri('/static/models/');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('/static/models/');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('/static/models/');
+        startVideo();
+    }
+    function startVideo() {
+        navigator.mediaDevices.getUserMedia({ video: {} })
+            .then(stream => {
+                document.getElementById('video').srcObject = stream;
+            })
+            .catch(err => console.error("Error accessing webcam:", err));
+    }
+    async function capture() {
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const imageData = canvas.toDataURL('image/jpeg');
+        fetch('/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: imageData })
+        }).then(response => response.json())
+          .then(data => {
+              window.location.href = '/home';
+          });
+    }
+    loadModels();
+</script>
