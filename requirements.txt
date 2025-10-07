@@ -1,7 +1,7 @@
 Flask==2.3.3
 mysql-connector-python==8.2.0
 Werkzeug==2.3.7
-opencv-python==4.8.1
+opencv-python-headless==4.8.1.78  # Headless version, smaller size
 numpy==1.24.4
 pandas==2.0.3
 scikit-learn==1.3.0
