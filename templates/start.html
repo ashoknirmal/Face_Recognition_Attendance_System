@@ -1,8 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Take Attendance{% endblock %}
+{% block content %}
+<style>
+    .flash-messages { margin-bottom: 20px; }
+    .flash-message { padding: 15px; border-radius: 8px; margin-bottom: 10px; font-size: 1rem; display: flex; align-items: center; gap: 10px; }
+    .flash-message.success { background: rgba(40, 167, 69, 0.1); border: 1px solid #28a745; color: #28a745; }
+    .flash-message.warning { background: rgba(255, 193, 7, 0.1); border: 1px solid #ffc107; color: #856404; }
+    .flash-message.error { background: rgba(220, 53, 69, 0.1); border: 1px solid #dc3545; color: #dc3545; }
+    .flash-message i { font-size: 1.2rem; }
+</style>
+<div class="container">
+    <h1>Take Attendance</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">
+                        <i class="fas {{ 'fa-check-circle' if category == 'success' else 'fa-exclamation-circle' if category == 'warning' else 'fa-times-circle' }}"></i>
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+    <video id="video" width="640" height="480" autoplay></video>
+    <canvas id="canvas" style="display: none;"></canvas>
+    <button onclick="capture()" class="btn btn-primary">Mark Attendance</button>
+    <p><a href="{{ url_for('home') }}">Back to Dashboard</a></p>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<video id="video" width="640" height="480" autoplay></video>
-<canvas id="canvas"></canvas>
-<button onclick="capture()">Mark Attendance</button>
 <script>
     async function loadModels() {
         await faceapi.nets.tinyFaceDetector.loadFromUri('/static/models/');
@@ -15,7 +42,10 @@
             .then(stream => {
                 document.getElementById('video').srcObject = stream;
             })
-            .catch(err => console.error("Error accessing webcam:", err));
+            .catch(err => {
+                console.error("Error accessing webcam:", err);
+                alert("Cannot access webcam. Please check permissions.");
+            });
     }
     async function capture() {
         const video = document.getElementById('video');
@@ -30,8 +60,13 @@
             body: JSON.stringify({ image: imageData })
         }).then(response => response.json())
           .then(data => {
-              window.location.href = '/home';
+              if (data.category === 'success') {
+                  window.location.href = '/home';
+              } else {
+                  alert(data.message);
+              }
           });
     }
     loadModels();
 </script>
+{% endblock %}
