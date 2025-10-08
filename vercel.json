@@ -1,28 +1,9 @@
 {
   "version": 2,
   "builds": [
-    {
-      "src": "app.py",
-      "use": "@vercel/python",
-      "config": { "maxLambdaSize": "50mb" }
-    },
-    {
-      "src": "static/**",
-      "use": "@vercel/static"
-    }
+    { "src": "app.py", "use": "@vercel/python" }
   ],
   "routes": [
-    {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "app.py"
-    }
-  ],
-  "env": {
-    "FLASK_ENV": "production",
-    "PYTHON_VERSION": "3.12"
-  }
+    { "src": "/(.*)", "dest": "app.py" }
+  ]
 }
